@@ -1,0 +1,31 @@
+{
+  "name": "banxa-native-onramp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reference onramp web app built on the Banxa Native API and the JS Native Payments SDK.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@banxa-official/javascript-native-payments-sdk": "^1.0.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "@primer-io/primer-js": "^1.12.0",
+    "next": "^16.4.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "typescript": "^6.0.3"
+  }
+}

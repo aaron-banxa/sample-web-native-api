@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "onramp",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["NODE_EXTRA_CA_CERTS=/private/tmp/claude-501/-Users-aaronlee-Documents-Github-sample-web-native-api/32b577b0-2a0e-4f84-a3cc-e16a2f05e1ff/scratchpad/cloudflare-gateway-ca.pem", "npm", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}

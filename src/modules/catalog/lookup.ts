@@ -12,9 +12,10 @@ export const findCountry = (c: Catalog, code: string) => c.countries.find((x) =>
 
 export const defaultNetwork = (networks: CatalogNetwork[]) => networks.find((n) => n.isDefault) ?? networks[0];
 
+/** Wallet formats are known locally (NETWORK_META); Banxa's `address` field is a token contract. Unknown networks: Banxa validates. */
 export function isValidWallet(network: CatalogNetwork, address: string): boolean {
   if (!address) return false;
-  return network.walletPattern ? new RegExp(network.walletPattern).test(address) : true;
+  return NETWORK_META[network.id]?.walletPattern?.test(address) ?? true;
 }
 
 /** A sensible starting draft from what Banxa supports. */

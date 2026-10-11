@@ -1,5 +1,5 @@
 import "server-only";
-import { isSupportedMethod, MEMO_NETWORKS, NETWORK_META, SUPPORTED_METHODS, type MethodId } from "@/config/onramp";
+import { isSupportedMethod, MEMO_NETWORKS, SUPPORTED_METHODS, type MethodId } from "@/config/onramp";
 import { banxa } from "@/lib/banxa";
 import type { Catalog } from "@/lib/types";
 
@@ -13,12 +13,21 @@ import type { Catalog } from "@/lib/types";
  *
  * Cached in memory for 10 minutes: this rarely changes and the endpoints are rate limited.
  * If a refresh fails, the last good copy keeps being served and the refresh is retried after 30s.
+ *
+ * `Catalog` is what the browser gets. Data only the server needs (countries where a network can't be
+ * used) is kept beside it, so it isn't sent to every visitor.
  */
 
 const TTL_MS = 10 * 60_000;
 const RETRY_MS = 30_000;
 
-const cache = ((globalThis as { __catalogCache?: { value: Catalog | null; at: number; failedAt: number; pending: Promise<Catalog> | null } }).__catalogCache ??= {
+interface CatalogData {
+  catalog: Catalog;
+  /** "USDT:TRON" → country codes where that network can't be used. */
+  unsupportedCountries: Map<string, string[]>;
+}
+
+const cache = ((globalThis as { __catalogCache?: { value: CatalogData | null; at: number; failedAt: number; pending: Promise<CatalogData> | null } }).__catalogCache ??= {
   value: null,
   at: 0,
   failedAt: 0,
@@ -26,16 +35,25 @@ const cache = ((globalThis as { __catalogCache?: { value: Catalog | null; at: nu
 });
 
 export async function getCatalog(): Promise<Catalog> {
+  return (await getCatalogData()).catalog;
+}
+
+/** Countries where a crypto network can't be used, from GET /eapi/v0/cryptocurrencies. */
+export async function getUnsupportedCountries(crypto: string, blockchain: string): Promise<string[]> {
+  return (await getCatalogData()).unsupportedCountries.get(`${crypto}:${blockchain}`) ?? [];
+}
+
+async function getCatalogData(): Promise<CatalogData> {
   const fresh = cache.value && Date.now() - cache.at < TTL_MS;
   const backingOff = Date.now() - cache.failedAt < RETRY_MS;
   if (fresh || (cache.value && backingOff)) return cache.value!;
   if (backingOff) throw new Error("Banxa configuration is temporarily unavailable");
 
   cache.pending ??= loadCatalog()
-    .then((catalog) => {
-      cache.value = catalog;
+    .then((data) => {
+      cache.value = data;
       cache.at = Date.now();
-      return catalog;
+      return data;
     })
     .catch((err) => {
       cache.failedAt = Date.now();
@@ -51,7 +69,7 @@ export async function getCatalog(): Promise<Catalog> {
   return cache.pending;
 }
 
-async function loadCatalog(): Promise<Catalog> {
+async function loadCatalog(): Promise<CatalogData> {
   const [fiats, cryptos, methods, countries, partnerLimits] = await Promise.all([
     banxa.listFiats(),
     banxa.listCryptocurrencies(),
@@ -68,7 +86,11 @@ async function loadCatalog(): Promise<Catalog> {
     return rows.length ? { minimum: Math.max(...rows.map((r) => r.minimum)), maximum: Math.min(...rows.map((r) => r.maximum)) } : null;
   };
 
-  return {
+  const unsupportedCountries = new Map(
+    cryptos.flatMap((c) => c.blockchains.filter((b) => b.unsupportedCountries?.length).map((b) => [`${c.crypto}:${b.blockchain}`, b.unsupportedCountries!] as const)),
+  );
+
+  const catalog: Catalog = {
     fiats: fiats
       .map((f) => ({
         code: f.fiat,
@@ -105,10 +127,7 @@ async function loadCatalog(): Promise<Catalog> {
           id: b.blockchain,
           name: b.name,
           isDefault: b.isDefault,
-          // Banxa's `address` is the token contract, so wallet formats come from NETWORK_META.
-          walletPattern: NETWORK_META[b.blockchain]?.walletPattern?.source ?? null,
           minimum: b.minimum ?? null,
-          unsupportedCountries: b.unsupportedCountries ?? [],
         })),
       }))
       .filter((c) => c.networks.length > 0),
@@ -117,5 +136,6 @@ async function loadCatalog(): Promise<Catalog> {
       .map((c) => ({ code: c.id, name: c.description, states: (c.states ?? []).map((s) => ({ code: s.id, name: s.description })) }))
       .sort((a, b) => a.name.localeCompare(b.name)),
   };
+  return { catalog, unsupportedCountries };
 }
 

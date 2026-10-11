@@ -4,7 +4,7 @@ import { IdentityUpdatesUnavailable, type Eligibility } from "@/lib/banxa/gatewa
 import { HttpError } from "@/lib/http";
 import type { EligibilityView } from "@/lib/types";
 import { findCountry, findNetwork } from "@/modules/catalog/lookup";
-import { getCatalog } from "@/modules/catalog/server";
+import { getCatalog, getUnsupportedCountries } from "@/modules/catalog/server";
 import type { Customer } from "@/modules/identity/customers";
 import { kycSharingEnabled } from "@/modules/identity/kyc-sharing";
 import { amountOf, type ValidDraft } from "@/modules/order/draft";
@@ -62,10 +62,9 @@ export const identityUpdates = ((globalThis as { __identityUpdates?: { available
 
 /** Banxa lists countries where each network can't be used (GET /eapi/v0/cryptocurrencies). */
 export async function assertAvailableInCountry(customer: Customer, draft: ValidDraft) {
+  if (!(await getUnsupportedCountries(draft.crypto, draft.blockchain)).includes(customer.country)) return;
   const catalog = await getCatalog();
-  const network = findNetwork(catalog, draft.crypto, draft.blockchain);
-  if (network?.unsupportedCountries.includes(customer.country)) {
-    const country = findCountry(catalog, customer.country)?.name ?? customer.country;
-    throw new HttpError(422, `${draft.crypto} on ${network.name} isn't available in ${country}. Choose another network or asset.`);
-  }
+  const network = findNetwork(catalog, draft.crypto, draft.blockchain)?.name ?? draft.blockchain;
+  const country = findCountry(catalog, customer.country)?.name ?? customer.country;
+  throw new HttpError(422, `${draft.crypto} on ${network} isn't available in ${country}. Choose another network or asset.`);
 }

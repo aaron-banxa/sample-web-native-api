@@ -73,10 +73,7 @@ export interface CatalogNetwork {
   id: string;
   name: string;
   isDefault: boolean;
-  /** Regex source for wallet validation (local, from NETWORK_META). Null: Banxa validates. */
-  walletPattern: string | null;
   minimum: string | null;
-  unsupportedCountries: string[];
 }
 
 export interface CatalogCrypto {

@@ -30,7 +30,7 @@ export async function syncOrders({ maxPages = 5, perPage = 50 } = {}) {
   }
 
   const openNative = listOpenOrders(7).filter((o) => o.rail === "native");
-  await Promise.all(openNative.map((o) => reconcileWithBanxa(o)));
+  await forEachLimit(openNative, CONCURRENCY, reconcileWithBanxa);
 
   return { rampsChecked, nativeChecked: openNative.length, updated };
 }
@@ -38,5 +38,17 @@ export async function syncOrders({ maxPages = 5, perPage = 50 } = {}) {
 /** Light reconciliation before showing a customer their orders. Mock mode relies on webhooks only. */
 export async function refreshCustomerOrders(customerId: string) {
   if (isMock) return;
-  await Promise.all(listOpenOrders(2, customerId).map((o) => reconcileWithBanxa(o)));
+  await forEachLimit(listOpenOrders(2, customerId), CONCURRENCY, reconcileWithBanxa);
+}
+
+/** Banxa calls in flight at once, to stay under its rate limits. */
+const CONCURRENCY = 5;
+
+/** Run `fn` over `items`, at most `limit` at a time. */
+async function forEachLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
+  const queue = [...items];
+  const worker = async () => {
+    while (queue.length) await fn(queue.shift()!);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, worker));
 }

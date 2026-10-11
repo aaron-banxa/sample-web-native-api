@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { route } from "@/lib/http";
 import { requireCustomer } from "@/lib/session";
@@ -7,10 +7,16 @@ import { listCustomerOrders, toOrderView } from "@/modules/order/orders";
 import { createOrder } from "@/modules/order/server";
 import { refreshCustomerOrders } from "@/modules/order/sync";
 
+/** How long the order history waits for Banxa before answering with what it has. */
+const REFRESH_WAIT_MS = 2_000;
+
 /** GET /api/orders – the customer's recent orders, newest first */
 export const GET = route(async () => {
   const customer = await requireCustomer();
-  await refreshCustomerOrders(customer.id);
+  // Catch up open orders with Banxa, but don't let a slow Banxa hold up the list: the rest finishes after the response.
+  const refresh = refreshCustomerOrders(customer.id);
+  after(refresh);
+  await Promise.race([refresh, new Promise((resolve) => setTimeout(resolve, REFRESH_WAIT_MS))]);
   return NextResponse.json(listCustomerOrders(customer.id));
 });
 

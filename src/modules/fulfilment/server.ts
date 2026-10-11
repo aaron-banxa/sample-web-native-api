@@ -75,9 +75,16 @@ export function applyBanxaUpdate(update: {
   return saved;
 }
 
+/** Ask Banxa about an order at most this often, however many viewers, lists and syncs want it. */
+const RECONCILE_EVERY_MS = 10_000;
+const reconciledAt: Map<string, number> = ((globalThis as { __reconciledAt?: Map<string, number> }).__reconciledAt ??= new Map());
+
 /** Fallback when webhooks can't reach you (e.g. local sandbox without a tunnel): ask Banxa directly. */
 export async function reconcileWithBanxa(order: Order): Promise<void> {
   if (isTerminal(order.status)) return;
+  if (Date.now() - (reconciledAt.get(order.id) ?? 0) < RECONCILE_EVERY_MS) return;
+  reconciledAt.set(order.id, Date.now());
+  if (reconciledAt.size > 5_000) reconciledAt.clear();
   try {
     const remote = await banxa.getOrderStatus(order.banxaOrderId, order.rail);
     if (remote) applyBanxaUpdate({ banxaOrderId: order.banxaOrderId, ...remote });

@@ -1,8 +1,6 @@
-import { isMock } from "@/lib/banxa";
 import { HttpError, route } from "@/lib/http";
 import { requireCustomer } from "@/lib/session";
-import { subscribe } from "@/modules/fulfilment/events";
-import { reconcileWithBanxa } from "@/modules/fulfilment/server";
+import { watchOrder } from "@/modules/fulfilment/watch";
 import { findOrder, toOrderView } from "@/modules/order/orders";
 import type { OrderView } from "@/lib/types";
 
@@ -11,12 +9,11 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 
 const HEARTBEAT_MS = 15_000;
-const RECONCILE_MS = 15_000;
 
 /**
  * GET /api/orders/:id/events – Server-Sent Events stream of order updates.
  * Sends the current order immediately, then every change pushed by the webhook handler.
- * Outside mock mode it also polls Banxa, in case webhooks can't reach this server.
+ * Outside mock mode the order is also polled on Banxa (once per order, shared by all its streams).
  */
 export const GET = route<Ctx>(async (req, { params }) => {
   const { id } = await params;
@@ -39,22 +36,12 @@ export const GET = route<Ctx>(async (req, { params }) => {
       const send = (view: OrderView) => write(`data: ${JSON.stringify(view)}\n\n`);
 
       send(toOrderView(order));
-      const unsubscribe = subscribe(id, send);
+      const unwatch = watchOrder(id, send);
       const heartbeat = setInterval(() => write(": ping\n\n"), HEARTBEAT_MS);
-      let reconciling = false; // don't stack Banxa calls if one is slow
-      const reconcile = isMock
-        ? undefined
-        : setInterval(() => {
-            const latest = findOrder(id);
-            if (!latest || reconciling) return;
-            reconciling = true;
-            void reconcileWithBanxa(latest).finally(() => (reconciling = false));
-          }, RECONCILE_MS);
 
       cleanup = () => {
-        unsubscribe();
+        unwatch();
         clearInterval(heartbeat);
-        clearInterval(reconcile);
       };
       req.signal.addEventListener("abort", () => {
         cleanup();

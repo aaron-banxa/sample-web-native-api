@@ -10,7 +10,7 @@ export class ApiRequestError extends Error {
     message: string,
     readonly status: number,
     readonly details?: { path: string; message: string }[],
-    /** Machine-readable reason, e.g. "verify_email". */
+    /** Machine-readable reason, when the server gives one. */
     readonly code?: string,
   ) {
     super(message);
@@ -61,7 +61,8 @@ export const api = {
   kycStatus: (draft: OrderDraft) => request<{ kycStatus: KycStatus; eligibility: EligibilityView | null }>("/api/identity/kyc-status", { method: "POST", body: { draft } }),
   orders: () => request<OrderSummary[]>("/api/orders"),
   me: () => request<CustomerView | null>("/api/identity"),
-  register: (form: IdentityForm) => request<CustomerView>("/api/identity", { method: "POST", body: form }),
+  /** Emails a one-time code. The customer is signed in by verifyEmail. */
+  register: (form: IdentityForm) => request<{ email: string }>("/api/identity", { method: "POST", body: form }),
   forget: () => request<null>("/api/identity", { method: "DELETE" }),
   verifyEmail: (email: string, code: string) => request<CustomerView>("/api/identity/verify", { method: "POST", body: { email, code } }),
   eligibility: (draft: OrderDraft, signal?: AbortSignal) => request<EligibilityView>("/api/eligibility", { method: "POST", body: { draft }, signal }),

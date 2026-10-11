@@ -11,6 +11,10 @@ export interface Customer {
   country: string;
   state: string | null;
   blocked: boolean;
+  /** Proved they own the email with Banxa's one-time code. Sessions are only issued after this. */
+  verified: boolean;
+  /** Part of every session cookie; bumping it signs out every browser. */
+  sessionVersion: number;
 }
 
 interface Row {
@@ -22,6 +26,8 @@ interface Row {
   country: string;
   state: string | null;
   blocked: number;
+  verified_at: string | null;
+  session_version: number;
 }
 
 const toCustomer = (r: Row): Customer => ({
@@ -33,7 +39,11 @@ const toCustomer = (r: Row): Customer => ({
   country: r.country,
   state: r.state,
   blocked: r.blocked === 1,
+  verified: r.verified_at !== null,
+  sessionVersion: r.session_version,
 });
+
+type Details = Pick<Customer, "email" | "givenName" | "surname" | "dateOfBirth" | "country" | "state">;
 
 /** Banxa identityReference allows only letters, digits and hyphens. */
 const ID_PATTERN = /^cus-[a-f0-9]{16}$/;
@@ -50,13 +60,27 @@ export function findCustomerByEmail(email: string): Customer | null {
   return row ? toCustomer(row) : null;
 }
 
-/** Create a new customer. The id is always generated here, never taken from the client. */
-export function createCustomer(input: Omit<Customer, "id" | "blocked">): Customer {
+/** Create a customer who hasn't verified their email yet. The id is always generated here, never taken from the client. */
+export function createCustomer(input: Details): Customer {
   const id = newCustomerId();
   db()
     .prepare("INSERT INTO customers (id, email, given_name, surname, date_of_birth, country, state, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
     .run(id, input.email, input.givenName, input.surname, input.dateOfBirth, input.country, input.state, now());
-  return { id, ...input, blocked: false };
+  return { id, ...input, blocked: false, verified: false, sessionVersion: 0 };
+}
+
+/** Nobody has proved they own this email yet, so the latest registration's details replace the earlier ones. */
+export function updateUnverifiedCustomer(id: string, input: Details): Customer {
+  db()
+    .prepare("UPDATE customers SET given_name = ?, surname = ?, date_of_birth = ?, country = ?, state = ? WHERE id = ? AND verified_at IS NULL")
+    .run(input.givenName, input.surname, input.dateOfBirth, input.country, input.state, id);
+  return findCustomerById(id)!;
+}
+
+/** The customer entered the right code: mark the email verified and sign out every other browser. */
+export function markVerified(id: string): Customer {
+  db().prepare("UPDATE customers SET verified_at = COALESCE(verified_at, ?), session_version = session_version + 1 WHERE id = ?").run(now(), id);
+  return findCustomerById(id)!;
 }
 
 /** Banxa identity webhook ACCOUNT_BLOCKED. */

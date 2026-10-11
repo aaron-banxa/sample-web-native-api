@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { route } from "@/lib/http";
+import { readJson, route } from "@/lib/http";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { rememberCustomer } from "@/lib/session";
-import { toCustomerView, verifyEmailSchema, verifyExistingCustomer } from "@/modules/identity/server";
+import { toCustomerView, verifyEmailCode, verifyEmailSchema } from "@/modules/identity/server";
 
-/** POST /api/identity/verify { email, code } – prove ownership of an already-registered email. */
+/** POST /api/identity/verify { email, code } – prove ownership of the email, then sign this browser in. */
 export const POST = route(async (req) => {
-  const customer = await verifyExistingCustomer(verifyEmailSchema.parse(await req.json()));
-  await rememberCustomer(customer.id);
+  rateLimit(`verify:${clientIp(req)}`, 20, 10 * 60_000);
+  const customer = await verifyEmailCode(verifyEmailSchema.parse(await readJson(req)));
+  await rememberCustomer(customer);
   return NextResponse.json(toCustomerView(customer));
 });

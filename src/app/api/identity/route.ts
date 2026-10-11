@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { route } from "@/lib/http";
-import { currentCustomer, forgetCustomer, rememberCustomer } from "@/lib/session";
-import { EmailVerificationRequired, identitySchema, registerCustomer, toCustomerView } from "@/modules/identity/server";
+import { readJson, route } from "@/lib/http";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { currentCustomer, forgetCustomer } from "@/lib/session";
+import { identitySchema, startRegistration, toCustomerView } from "@/modules/identity/server";
 
 /** GET /api/identity – the remembered customer, if any. */
 export const GET = route(async () => {
@@ -9,16 +10,15 @@ export const GET = route(async () => {
   return NextResponse.json(customer ? toCustomerView(customer) : null);
 });
 
-/** POST /api/identity – register and ensure a Banxa identity exists. 409 + code if the email is already registered. */
+/**
+ * POST /api/identity – register (or re-register) and email a one-time code.
+ * Always 202 { email } for a valid form, whether or not the email is already a customer.
+ * The browser is signed in by POST /api/identity/verify.
+ */
 export const POST = route(async (req) => {
-  try {
-    const customer = await registerCustomer(identitySchema.parse(await req.json()), await currentCustomer());
-    await rememberCustomer(customer.id);
-    return NextResponse.json(toCustomerView(customer));
-  } catch (err) {
-    if (err instanceof EmailVerificationRequired) return NextResponse.json({ error: err.message, code: "verify_email" }, { status: 409 });
-    throw err;
-  }
+  rateLimit(`register:${clientIp(req)}`, 10, 10 * 60_000);
+  const result = await startRegistration(identitySchema.parse(await readJson(req)));
+  return NextResponse.json(result, { status: 202 });
 });
 
 /** DELETE /api/identity – "Not you?" */

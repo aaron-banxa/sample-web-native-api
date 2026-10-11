@@ -19,7 +19,16 @@ CREATE TABLE IF NOT EXISTS customers (
   country       TEXT NOT NULL,
   state         TEXT,
   blocked       INTEGER NOT NULL DEFAULT 0,  -- set by Banxa ACCOUNT_BLOCKED webhooks
+  verified_at   TEXT,                        -- when the customer proved they own the email (OTP)
+  session_version INTEGER NOT NULL DEFAULT 0, -- bumped on each verification; older sessions stop working
   created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS otp_attempts (
+  email          TEXT PRIMARY KEY,
+  failures       INTEGER NOT NULL DEFAULT 0,
+  window_start   TEXT NOT NULL,             -- failures count from here (15-minute window)
+  last_sent      TEXT                       -- when a code was last requested from Banxa
 );
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -67,6 +76,19 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 );
 `;
 
+/** Columns added after the first release, for databases created before them. */
+const MIGRATIONS = [
+  ["customers", "verified_at", "verified_at TEXT"],
+  ["customers", "session_version", "session_version INTEGER NOT NULL DEFAULT 0"],
+] as const;
+
+function migrate(database: DatabaseSync) {
+  for (const [table, column, ddl] of MIGRATIONS) {
+    const columns = database.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (!columns.some((c) => c.name === column)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+
 const g = globalThis as { __onrampDb?: DatabaseSync };
 
 export function db(): DatabaseSync {
@@ -76,6 +98,7 @@ export function db(): DatabaseSync {
     const database = new DatabaseSync(file);
     database.exec("PRAGMA journal_mode = WAL;");
     database.exec(SCHEMA);
+    migrate(database);
     g.__onrampDb = database;
   }
   return g.__onrampDb;

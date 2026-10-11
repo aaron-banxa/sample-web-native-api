@@ -7,7 +7,10 @@ import { MockOnly, useCatalog, useRunMode } from "@/components/onramp/onramp-con
 import { Button, Callout } from "@/components/ui/primitives";
 import { findCountry } from "@/modules/catalog/lookup";
 
-/** Step 2 · Customer details. Countries come from GET /eapi/v0/countries. The server creates (or reuses) the Banxa identity. */
+/**
+ * Step 2 · Customer details, then the one-time code Banxa emails (proves they own the address).
+ * Countries come from GET /eapi/v0/countries. The server creates (or reuses) the Banxa identity.
+ */
 export function IdentityStep({ onDone }: { onDone: (customer: CustomerView) => void }) {
   const catalog = useCatalog();
   const { mock } = useRunMode(); // mock mode prefills test details
@@ -26,7 +29,7 @@ export function IdentityStep({ onDone }: { onDone: (customer: CustomerView) => v
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  // Set when the email already belongs to a customer: they must enter the code Banxa emailed.
+  // Set once the details are accepted: the customer enters the code Banxa emailed.
   const [verifying, setVerifying] = useState<{ email: string; code: string } | null>(null);
 
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
@@ -47,19 +50,15 @@ export function IdentityStep({ onDone }: { onDone: (customer: CustomerView) => v
       consent: form.consent,
     };
     try {
-      onDone(await api.register(payload));
+      const { email } = await api.register(payload);
+      setVerifying({ email, code: "" });
     } catch (err) {
-      if (err instanceof ApiRequestError && err.code === "verify_email") {
-        setVerifying({ email: payload.email, code: "" });
-        setBusy(false);
-        return;
-      }
       if (err instanceof ApiRequestError && err.details) {
         setFieldErrors(Object.fromEntries(err.details.map((d) => [d.path, d.message])));
       }
       setError(err instanceof Error ? err.message : "Something went wrong");
-      setBusy(false);
     }
+    setBusy(false);
   }
 
   async function verify(e: React.FormEvent) {
@@ -80,7 +79,7 @@ export function IdentityStep({ onDone }: { onDone: (customer: CustomerView) => v
       <form onSubmit={verify} noValidate>
         <h2 className="step-title serif blur-in">Check your email</h2>
         <p className="step-sub blur-in" style={{ "--i": 1 } as React.CSSProperties}>
-          {verifying.email} is already registered. Enter the 4-digit code Banxa just sent to it.
+          Enter the 4-digit code Banxa sent to {verifying.email}.
         </p>
         <div className="field blur-in" style={{ "--i": 2 } as React.CSSProperties}>
           <label className="label" htmlFor="otp">Code</label>

@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, CopyIcon, InfoIcon, SealCheckIcon, WarningIcon, XCircleIcon } from "@phosphor-icons/react";
+import { CheckIcon, CopyIcon, InfoIcon, SealCheckIcon, WarningIcon, XCircleIcon } from "@/components/ui/icons";
 import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cryptoMeta } from "@/config/onramp";
 

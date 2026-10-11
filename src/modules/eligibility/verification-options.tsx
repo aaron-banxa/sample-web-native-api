@@ -1,6 +1,6 @@
 "use client";
 
-import { IdentificationCardIcon } from "@phosphor-icons/react";
+import { IdentificationCardIcon } from "@/components/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { EligibilityView, OrderDraft } from "@/lib/types";

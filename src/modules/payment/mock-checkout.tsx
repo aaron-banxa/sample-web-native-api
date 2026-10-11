@@ -1,6 +1,6 @@
 "use client";
 
-import { AppleLogoIcon, CheckCircleIcon, CreditCardIcon, IdentificationCardIcon, ScanSmileyIcon } from "@phosphor-icons/react";
+import { AppleLogoIcon, CheckCircleIcon, CreditCardIcon, IdentificationCardIcon, ScanSmileyIcon } from "@/components/ui/icons";
 import { useState } from "react";
 import { SUPPORTED_METHODS, type MethodId } from "@/config/onramp";
 import { Button, Callout } from "@/components/ui/primitives";

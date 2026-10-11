@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowClockwiseIcon, InfoIcon, LockSimpleIcon } from "@phosphor-icons/react";
+import { ArrowClockwiseIcon, InfoIcon, LockSimpleIcon } from "@/components/ui/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SUPPORTED_METHODS } from "@/config/onramp";
 import { api } from "@/lib/api";

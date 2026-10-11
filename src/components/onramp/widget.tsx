@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftIcon, LockSimpleIcon } from "@phosphor-icons/react";
+import { ArrowLeftIcon, LockSimpleIcon } from "@/components/ui/icons";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import type { CustomerView, EligibilityView, OrderDraft, OrderView, QuoteView } from "@/lib/types";

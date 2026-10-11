@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckIcon, ExclamationMarkIcon } from "@phosphor-icons/react";
+import { CheckIcon, ExclamationMarkIcon } from "@/components/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { formatFiat } from "@/lib/format";

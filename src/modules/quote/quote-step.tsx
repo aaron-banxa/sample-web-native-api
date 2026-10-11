@@ -1,6 +1,6 @@
 "use client";
 
-import { AppleLogoIcon, ArrowDownIcon, BankIcon, CheckCircleIcon, ClockIcon, CreditCardIcon, GoogleLogoIcon, ListIcon, PencilSimpleIcon, WarningCircleIcon } from "@phosphor-icons/react";
+import { AppleLogoIcon, ArrowDownIcon, BankIcon, CheckCircleIcon, ClockIcon, CreditCardIcon, GoogleLogoIcon, ListIcon, PencilSimpleIcon, WarningCircleIcon } from "@/components/ui/icons";
 import { useEffect, useState } from "react";
 import { cryptoMeta, NETWORK_META, SUPPORTED_METHODS, type MethodId } from "@/config/onramp";
 import { api } from "@/lib/api";

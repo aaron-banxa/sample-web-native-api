@@ -1,6 +1,6 @@
 "use client";
 
-import { CaretRightIcon } from "@phosphor-icons/react";
+import { CaretRightIcon } from "@/components/ui/icons";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatFiat } from "@/lib/format";

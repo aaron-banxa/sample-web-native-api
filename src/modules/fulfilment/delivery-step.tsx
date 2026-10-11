@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowSquareOutIcon, CheckIcon, CircleIcon } from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, CheckIcon, CircleIcon } from "@/components/ui/icons";
 import { useEffect, useRef } from "react";
 import { cryptoMeta, NETWORK_META } from "@/config/onramp";
 import { shortAddress } from "@/lib/format";

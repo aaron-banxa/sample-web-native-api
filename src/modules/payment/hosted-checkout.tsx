@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowSquareOutIcon, IdentificationCardIcon } from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, IdentificationCardIcon } from "@/components/ui/icons";
 import { Button } from "@/components/ui/primitives";
 
 interface Props {

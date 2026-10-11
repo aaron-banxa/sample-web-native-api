@@ -1,6 +1,6 @@
 "use client";
 
-import { FlaskIcon } from "@phosphor-icons/react";
+import { FlaskIcon } from "@/components/ui/icons";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { formatFiat } from "@/lib/format";

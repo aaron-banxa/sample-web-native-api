@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheckIcon } from "@phosphor-icons/react";
+import { ShieldCheckIcon } from "@/components/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { Callout, Spinner } from "@/components/ui/primitives";
 

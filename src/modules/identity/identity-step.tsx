@@ -3,13 +3,14 @@
 import { useState } from "react";
 import { api, ApiRequestError, type IdentityForm } from "@/lib/api";
 import type { CustomerView } from "@/lib/types";
-import { useCatalog } from "@/components/onramp/catalog-context";
+import { MockOnly, useCatalog, useRunMode } from "@/components/onramp/onramp-context";
 import { Button, Callout } from "@/components/ui/primitives";
 import { findCountry } from "@/modules/catalog/lookup";
 
 /** Step 2 · Customer details. Countries come from GET /eapi/v0/countries. The server creates (or reuses) the Banxa identity. */
-export function IdentityStep({ mock, onDone }: { mock: boolean; onDone: (customer: CustomerView) => void }) {
+export function IdentityStep({ onDone }: { onDone: (customer: CustomerView) => void }) {
   const catalog = useCatalog();
+  const { mock } = useRunMode(); // mock mode prefills test details
   const { countries } = catalog;
   const [form, setForm] = useState({
     email: mock ? "mia.hargreaves@example.com" : "",
@@ -84,7 +85,7 @@ export function IdentityStep({ mock, onDone }: { mock: boolean; onDone: (custome
         <div className="field blur-in" style={{ "--i": 2 } as React.CSSProperties}>
           <label className="label" htmlFor="otp">Code</label>
           <input id="otp" className="input mono" inputMode="numeric" autoComplete="one-time-code" maxLength={4} autoFocus value={verifying.code} onChange={(e) => setVerifying({ ...verifying, code: e.target.value.replace(/\D/g, "") })} />
-          {mock && <p className="hint">Mock mode: the code is 1234.</p>}
+          <MockOnly><p className="hint">Mock mode: the code is 1234.</p></MockOnly>
         </div>
         {error && <Callout tone="red">{error}</Callout>}
         <Button type="submit" variant="primary" block disabled={verifying.code.length !== 4} busy={busy} busyLabel="Checking">Verify</Button>

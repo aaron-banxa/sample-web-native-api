@@ -1,34 +1,37 @@
 "use client";
 
 import { ArrowSquareOutIcon, CheckIcon, CircleIcon } from "@/components/ui/icons";
-import { useEffect, useRef } from "react";
 import { cryptoMeta, NETWORK_META } from "@/config/onramp";
 import { shortAddress } from "@/lib/format";
 import type { OrderView } from "@/lib/types";
-import { useCatalog } from "@/components/onramp/catalog-context";
-import { Button, Callout, CopyButton, Spinner } from "@/components/ui/primitives";
+import { useCatalog } from "@/components/onramp/onramp-context";
+import { Button, Callout, CopyButton, LocalTime, Spinner } from "@/components/ui/primitives";
 import { findNetwork } from "@/modules/catalog/lookup";
-import { isFailure, progressOf } from "./status";
-import { useOrderStream } from "./use-order-stream";
+import { isFailure, progressOf, type AppStatus } from "./status";
 
 interface Props {
+  /** Kept live by the widget (useOrderStream). */
   order: OrderView;
-  onUpdate: (order: OrderView) => void;
   onRestart: () => void;
 }
 
 const RING = 2 * Math.PI * 58;
 
+/** When a stage was reached: the first time this app saw that status or a later one. */
+function reachedAt(order: OrderView, stage: number): string | undefined {
+  const first = Object.entries(order.statusTimes)
+    .filter(([status]) => progressOf(status as AppStatus) >= stage)
+    .map(([, at]) => at)
+    .sort()[0];
+  return first ?? (stage === 0 ? order.createdAt : undefined);
+}
+
 /** Step 7 · Follow the order to delivery. Every update here comes from a Banxa webhook. */
-export function DeliveryStep({ order: initial, onUpdate, onRestart }: Props) {
-  const order = useOrderStream(initial);
-  const reachedAt = useRef<Record<number, string>>({});
+export function DeliveryStep({ order, onRestart }: Props) {
   const catalog = useCatalog();
   const networkName = findNetwork(catalog, order.crypto, order.blockchain)?.name ?? order.blockchain;
   const explorerTxUrl = NETWORK_META[order.blockchain]?.explorerTxUrl;
   const decimals = Math.min(cryptoMeta(order.crypto).decimals, 6);
-
-  useEffect(() => onUpdate(order), [order, onUpdate]);
 
   const stages = [
     { title: "Order created", sub: "Waiting for payment", at: 0 },
@@ -41,9 +44,6 @@ export function DeliveryStep({ order: initial, onUpdate, onRestart }: Props) {
   const failed = isFailure(order.status);
   const progress = progressOf(order.status);
   const doneCount = stages.filter((s) => progress >= s.at).length;
-  stages.forEach((s, i) => {
-    if (progress >= s.at && !reachedAt.current[i]) reachedAt.current[i] = new Date().toLocaleTimeString("en-AU", { hour12: false });
-  });
 
   const complete = order.status === "COMPLETE";
   const title = complete
@@ -86,7 +86,7 @@ export function DeliveryStep({ order: initial, onUpdate, onRestart }: Props) {
                 <div className="t-title">{s.title}</div>
                 <div className="t-sub">{s.sub}</div>
               </div>
-              <span className="t-time">{done ? reachedAt.current[i] : ""}</span>
+              <span className="t-time">{done && <LocalTime iso={reachedAt(order, s.at)} />}</span>
             </li>
           );
         })}

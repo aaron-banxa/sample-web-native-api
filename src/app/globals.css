@@ -137,16 +137,19 @@ a { color: inherit; }
   box-shadow: var(--shadow-soft);
 }
 .widget::before { content: ""; position: absolute; inset: 3px; border-radius: 11px; border: 1px solid rgba(0,0,0,.035); pointer-events: none; }
-.beam { position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; overflow: hidden; }
-.beam::after {
-  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
-  background: conic-gradient(from var(--beam-angle), transparent 0deg, transparent 300deg, rgba(17,17,17,.55) 340deg, transparent 360deg);
+/* A 1px ring (the mask) over a large conic gradient that rotates. Rotating with `transform` runs on the
+   compositor; animating the gradient's angle instead would repaint it on every frame. */
+.beam {
+  position: absolute; inset: -1px; border-radius: inherit; pointer-events: none; overflow: hidden; padding: 1px;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor; mask-composite: exclude;
-  animation: beam 6s linear infinite;
 }
-@property --beam-angle { syntax: "<angle>"; initial-value: 0deg; inherits: false; }
-@keyframes beam { to { --beam-angle: 360deg; } }
+.beam::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 300%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  background: conic-gradient(transparent 0deg, transparent 300deg, rgba(17,17,17,.55) 340deg, transparent 360deg);
+  animation: beam 6s linear infinite; will-change: transform;
+}
+@keyframes beam { to { transform: translate(-50%, -50%) rotate(360deg); } }
 
 .widget-head { display: flex; align-items: center; justify-content: space-between; min-height: 30px; padding: 18px 22px 0; }
 .widget-progress { display: flex; gap: 4px; padding: 14px 22px 0; }

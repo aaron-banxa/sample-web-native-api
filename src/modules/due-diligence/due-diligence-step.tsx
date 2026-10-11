@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { api, type DueDiligenceAnswers } from "@/lib/api";
 import type { EligibilityView, OrderDraft } from "@/lib/types";
-import { useCatalog } from "@/components/onramp/catalog-context";
+import { useCatalog } from "@/components/onramp/onramp-context";
 import { Button, Callout } from "@/components/ui/primitives";
 import { findCountry } from "@/modules/catalog/lookup";
 import { OCCUPATION_INDUSTRIES, OCCUPATIONS_BY_INDUSTRY, PURPOSES, SOURCES_OF_FUNDS, TAX_ID_TYPES } from "./options";

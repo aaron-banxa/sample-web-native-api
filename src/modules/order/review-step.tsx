@@ -1,14 +1,15 @@
 "use client";
 
 import { ArrowClockwiseIcon, InfoIcon, LockSimpleIcon } from "@/components/ui/icons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SUPPORTED_METHODS } from "@/config/onramp";
-import { api } from "@/lib/api";
+import { api, isAbort } from "@/lib/api";
 import { formatFiat, shortAddress } from "@/lib/format";
 import type { LockedQuoteView, OrderDraft, OrderView, QuoteView } from "@/lib/types";
-import { useCatalog } from "@/components/onramp/catalog-context";
+import { useCatalog, useRunMode } from "@/components/onramp/onramp-context";
 import { Button, Callout, Spinner } from "@/components/ui/primitives";
 import { findMethod, findNetwork } from "@/modules/catalog/lookup";
+import { loadPaymentSdk } from "@/modules/payment/payment-sdk";
 
 interface Props {
   draft: OrderDraft;
@@ -24,6 +25,7 @@ interface Props {
  */
 export function ReviewStep({ draft, quote: initialQuote, verificationAtCheckout, onOrder }: Props) {
   const catalog = useCatalog();
+  const { mock } = useRunMode();
   const rail = SUPPORTED_METHODS[draft.method].rail;
   const lockable = rail === "ramp" && !verificationAtCheckout;
   const methodName = findMethod(catalog, draft.fiat, draft.method)?.name ?? draft.method;
@@ -35,31 +37,35 @@ export function ReviewStep({ draft, quote: initialQuote, verificationAtCheckout,
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const started = useRef(false);
   // One key per review screen: retrying the same confirmation can't create a second order.
   const [idempotencyKey] = useState(() => crypto.randomUUID().replace(/-/g, "").slice(0, 16));
 
-  const lock = useCallback(async () => {
-    setError(null);
-    setLocked(null);
-    try {
-      const q = await api.lockQuote(draft);
-      setLocked(q);
-      setQuote(q);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't lock a rate");
-    }
-  }, [draft]);
+  const lock = useCallback(
+    async (signal?: AbortSignal) => {
+      setError(null);
+      setLocked(null);
+      try {
+        const q = await api.lockQuote(draft, signal);
+        setLocked(q);
+        setQuote(q);
+      } catch (err) {
+        if (!isAbort(err)) setError(err instanceof Error ? err.message : "Couldn't lock a rate");
+      }
+    },
+    [draft],
+  );
 
   useEffect(() => {
-    if (started.current) return; // React StrictMode runs effects twice in development
-    started.current = true;
-    if (lockable) {
-      void lock();
-    } else {
-      api.quote(draft).then(setQuote, () => {});
-    }
+    const controller = new AbortController();
+    if (lockable) void lock(controller.signal);
+    else api.quote(draft, controller.signal).then(setQuote, () => {});
+    return () => controller.abort();
   }, [draft, lockable, lock]);
+
+  // Card and wallet payments open the payment SDK next: start downloading it now.
+  useEffect(() => {
+    if (rail === "native" && !verificationAtCheckout && !mock) void loadPaymentSdk().catch(() => {});
+  }, [rail, verificationAtCheckout, mock]);
 
   useEffect(() => {
     if (!locked) return;

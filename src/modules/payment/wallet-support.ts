@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRunMode } from "@/components/onramp/onramp-context";
 
 declare global {
   interface Window {
@@ -24,7 +25,8 @@ export function supportsGooglePay(): boolean {
 }
 
 /** Which wallets to offer. Mock mode offers both so every path can be tried. */
-export function useWalletSupport(mock: boolean) {
+export function useWalletSupport() {
+  const { mock } = useRunMode();
   const [support, setSupport] = useState({ apple: mock, google: mock });
   useEffect(() => {
     if (!mock) setSupport({ apple: supportsApplePay(), google: supportsGooglePay() });

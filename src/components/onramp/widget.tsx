@@ -1,22 +1,18 @@
 "use client";
 
-import { ArrowLeftIcon, LockSimpleIcon } from "@/components/ui/icons";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
+import { ArrowLeftIcon, LockSimpleIcon } from "@/components/ui/icons";
+import { Spinner } from "@/components/ui/primitives";
+import { StatusPill, type PillTone } from "@/components/ui/status-pill";
 import { api } from "@/lib/api";
 import type { CustomerView, EligibilityView, OrderDraft, OrderView, QuoteView } from "@/lib/types";
-import { Spinner } from "@/components/ui/primitives";
 import { defaultDraft } from "@/modules/catalog/lookup";
-import { useCatalog } from "./catalog-context";
-import { StatusPill, type PillTone } from "@/components/ui/status-pill";
-import { DueDiligenceStep } from "@/modules/due-diligence/due-diligence-step";
-import { EligibilityStep } from "@/modules/eligibility/eligibility-step";
-import { DeliveryStep } from "@/modules/fulfilment/delivery-step";
 import { isFailure, STATUS_LABEL } from "@/modules/fulfilment/status";
-import { IdentityStep } from "@/modules/identity/identity-step";
-import { OrdersStep } from "@/modules/order/orders-step";
-import { ReviewStep } from "@/modules/order/review-step";
-import { PaymentStep } from "@/modules/payment/payment-step";
+import { useOrderStream } from "@/modules/fulfilment/use-order-stream";
 import { QuoteStep } from "@/modules/quote/quote-step";
+import { useCatalog, useRunMode } from "./onramp-context";
+import { markPaid, resumeStepFor } from "./paid-orders";
 
 /**
  * The onramp flow:
@@ -37,63 +33,75 @@ const STEPS = [
 /** "orders" is a side view (order history), not part of the purchase flow. */
 type StepId = (typeof STEPS)[number]["id"] | "orders";
 
-/** Orders the customer already paid for in this browser, so a refresh doesn't show the payment sheet again. */
-const PAID_KEY = "onramp:paid-orders";
-const markPaid = (id: string) => {
-  try {
-    const ids = new Set<string>(JSON.parse(sessionStorage.getItem(PAID_KEY) ?? "[]"));
-    sessionStorage.setItem(PAID_KEY, JSON.stringify([...ids.add(id)]));
-  } catch {}
-};
-const wasPaid = (id: string) => {
-  try {
-    return (JSON.parse(sessionStorage.getItem(PAID_KEY) ?? "[]") as string[]).includes(id);
-  } catch {
-    return false;
-  }
-};
+// The quote step ships with the page. Later steps load on demand, and are prefetched once the page is idle.
+const loading = () => <div className="center" style={{ padding: 48 }}><Spinner dark /></div>;
+const IdentityStep = dynamic(() => import("@/modules/identity/identity-step").then((m) => m.IdentityStep), { loading });
+const EligibilityStep = dynamic(() => import("@/modules/eligibility/eligibility-step").then((m) => m.EligibilityStep), { loading });
+const DueDiligenceStep = dynamic(() => import("@/modules/due-diligence/due-diligence-step").then((m) => m.DueDiligenceStep), { loading });
+const ReviewStep = dynamic(() => import("@/modules/order/review-step").then((m) => m.ReviewStep), { loading });
+const PaymentStep = dynamic(() => import("@/modules/payment/payment-step").then((m) => m.PaymentStep), { loading });
+const DeliveryStep = dynamic(() => import("@/modules/fulfilment/delivery-step").then((m) => m.DeliveryStep), { loading });
+const OrdersStep = dynamic(() => import("@/modules/order/orders-step").then((m) => m.OrdersStep), { loading });
 
-interface Props {
-  mode: "mock" | "sandbox" | "production";
-  initialOrderId?: string;
-  merchantDomain?: string;
+function prefetchSteps() {
+  void import("@/modules/identity/identity-step");
+  void import("@/modules/eligibility/eligibility-step");
+  void import("@/modules/due-diligence/due-diligence-step");
+  void import("@/modules/order/review-step");
+  void import("@/modules/payment/payment-step");
+  void import("@/modules/fulfilment/delivery-step");
+  void import("@/modules/order/orders-step");
 }
 
-export function OnrampWidget({ mode, initialOrderId, merchantDomain }: Props) {
-  const mock = mode === "mock";
+/** Only move to delivery from the payment step, so a webhook and the payment sheet can't both add it. */
+const toDelivery = (h: StepId[]): StepId[] => (h[h.length - 1] === "payment" ? [...h, "delivery"] : h);
+
+interface Props {
+  /** The remembered customer, read from the session cookie on the server. */
+  initialCustomer: CustomerView | null;
+  /** The order in the URL (`/?order=…`): a refresh, or the customer returning from Banxa hosted checkout. */
+  initialOrder: OrderView | null;
+  initialStep: "quote" | "payment" | "delivery";
+}
+
+export function OnrampWidget({ initialCustomer, initialOrder, initialStep }: Props) {
   const catalog = useCatalog();
-  const [history, setHistory] = useState<StepId[]>(["quote"]);
+  const { mock } = useRunMode();
+  const [history, setHistory] = useState<StepId[]>(initialStep === "quote" ? ["quote"] : ["quote", initialStep]);
   const [draft, setDraft] = useState<OrderDraft>(() => defaultDraft(catalog, mock)!);
   const [quote, setQuote] = useState<QuoteView | null>(null);
-  const [customer, setCustomer] = useState<CustomerView | null>(null);
+  const [customer, setCustomer] = useState(initialCustomer);
   const [eligibility, setEligibility] = useState<EligibilityView | null>(null);
-  const [order, setOrder] = useState<OrderView | null>(null);
-  const [restoring, setRestoring] = useState(!!initialOrderId);
+  const [order, setOrder] = useState(initialOrder);
 
   const step = history[history.length - 1];
   const go = (next: StepId) => setHistory((h) => [...h, next]);
   const back = () => setHistory((h) => (h.length > 1 ? h.slice(0, -1) : h));
 
   useEffect(() => {
-    api.me().then(setCustomer, () => {});
+    if (typeof requestIdleCallback === "function") {
+      const id = requestIdleCallback(prefetchSteps, { timeout: 4000 });
+      return () => cancelIdleCallback(id);
+    }
+    const id = setTimeout(prefetchSteps, 2000);
+    return () => clearTimeout(id);
   }, []);
 
-  /** Show an existing order: the payment step if it still needs paying, otherwise delivery. */
-  const openOrder = useCallback(async (orderId: string, base: StepId[]) => {
+  // One live connection for the open order, shared by the payment and delivery steps.
+  const onOrderUpdate = useCallback((next: OrderView) => {
+    setOrder(next);
+    // Banxa has seen the payment (for example, a bank transfer arrived): show delivery.
+    if (next.status !== "AWAITING_PAYMENT") setHistory(toDelivery);
+  }, []);
+  useOrderStream(step === "payment" || step === "delivery" ? order : null, onOrderUpdate);
+
+  /** Open an order from the order history. */
+  const openOrder = useCallback(async (orderId: string) => {
     const o = await api.order(orderId);
     setOrder(o);
     window.history.replaceState(null, "", `/?order=${o.id}`);
-    const payNow = o.status === "AWAITING_PAYMENT" && o.payment.mode !== "hosted" && !wasPaid(o.id);
-    setHistory([...base, payNow ? "payment" : "delivery"]);
+    setHistory(["quote", "orders", resumeStepFor(o)]);
   }, []);
-
-  // Returning from Banxa hosted checkout (redirectUrl) or a page refresh: restore the order.
-  useEffect(() => {
-    if (!initialOrderId) return;
-    openOrder(initialOrderId, ["quote"])
-      .catch(() => window.history.replaceState(null, "", "/"))
-      .finally(() => setRestoring(false));
-  }, [initialOrderId, openOrder]);
 
   const routeEligibility = (result: EligibilityView) => {
     setEligibility(result);
@@ -107,14 +115,12 @@ export function OnrampWidget({ mode, initialOrderId, merchantDomain }: Props) {
     window.history.replaceState(null, "", "/");
   }, []);
 
+  // The payment sheet authorised the payment. Delivery waits for Banxa to confirm it.
+  const orderId = order?.id;
   const onPaid = useCallback(() => {
-    setOrder((o) => {
-      if (o) markPaid(o.id);
-      return o;
-    });
-    setHistory((h) => [...h, "delivery"]);
-  }, []);
-  const onOrderUpdate = useCallback((o: OrderView) => setOrder(o), []);
+    if (orderId) markPaid(orderId);
+    setHistory(toDelivery);
+  }, [orderId]);
 
   const pill = pillFor(step, { draft, customer, eligibility, order });
   const index = STEPS.findIndex((s) => s.id === step);
@@ -138,61 +144,53 @@ export function OnrampWidget({ mode, initialOrderId, merchantDomain }: Props) {
         </div>
 
         <div className="widget-body" key={step}>
-          {restoring ? (
-            <div className="center" style={{ padding: 48 }}><Spinner dark /></div>
-          ) : (
-            <>
-              {step === "quote" && (
-                <QuoteStep
-                  mock={mock}
-                  draft={draft}
-                  onDraftChange={setDraft}
-                  quote={quote}
-                  onQuote={setQuote}
-                  customer={customer}
-                  onForgetCustomer={() => api.forget().then(() => setCustomer(null))}
-                  onShowOrders={() => go("orders")}
-                  onContinue={() => go(customer ? "eligibility" : "identity")}
-                />
-              )}
-              {step === "identity" && (
-                <IdentityStep
-                  mock={mock}
-                  onDone={(c) => {
-                    setCustomer(c);
-                    go("eligibility");
-                  }}
-                />
-              )}
-              {step === "eligibility" && customer && <EligibilityStep draft={draft} customer={customer} onContinue={routeEligibility} />}
-              {step === "due-diligence" && eligibility && (
-                <DueDiligenceStep
-                  requirements={eligibility.requirements}
-                  draft={draft}
-                  country={customer?.country ?? ""}
-                  onResult={(result) => {
-                    setEligibility(result);
-                    if (result.next !== "due-diligence") go("review");
-                  }}
-                />
-              )}
-              {step === "review" && (
-                <ReviewStep
-                  draft={draft}
-                  quote={quote}
-                  verificationAtCheckout={eligibility?.next === "verification"}
-                  onOrder={(o) => {
-                    setOrder(o);
-                    window.history.replaceState(null, "", `/?order=${o.id}`);
-                    go("payment");
-                  }}
-                />
-              )}
-              {step === "payment" && order && <PaymentStep order={order} mock={mock} merchantDomain={merchantDomain} onPaid={onPaid} onRestart={restart} />}
-              {step === "delivery" && order && <DeliveryStep order={order} onUpdate={onOrderUpdate} onRestart={restart} />}
-              {step === "orders" && <OrdersStep onOpen={(id) => void openOrder(id, ["quote", "orders"])} />}
-            </>
+          {step === "quote" && (
+            <QuoteStep
+              draft={draft}
+              onDraftChange={setDraft}
+              quote={quote}
+              onQuote={setQuote}
+              customer={customer}
+              onForgetCustomer={() => api.forget().then(() => setCustomer(null))}
+              onShowOrders={() => go("orders")}
+              onContinue={() => go(customer ? "eligibility" : "identity")}
+            />
           )}
+          {step === "identity" && (
+            <IdentityStep
+              onDone={(c) => {
+                setCustomer(c);
+                go("eligibility");
+              }}
+            />
+          )}
+          {step === "eligibility" && customer && <EligibilityStep draft={draft} customer={customer} onContinue={routeEligibility} />}
+          {step === "due-diligence" && eligibility && (
+            <DueDiligenceStep
+              requirements={eligibility.requirements}
+              draft={draft}
+              country={customer?.country ?? ""}
+              onResult={(result) => {
+                setEligibility(result);
+                if (result.next !== "due-diligence") go("review");
+              }}
+            />
+          )}
+          {step === "review" && (
+            <ReviewStep
+              draft={draft}
+              quote={quote}
+              verificationAtCheckout={eligibility?.next === "verification"}
+              onOrder={(o) => {
+                setOrder(o);
+                window.history.replaceState(null, "", `/?order=${o.id}`);
+                go("payment");
+              }}
+            />
+          )}
+          {step === "payment" && order && <PaymentStep order={order} onPaid={onPaid} onRestart={restart} />}
+          {step === "delivery" && order && <DeliveryStep order={order} onRestart={restart} />}
+          {step === "orders" && <OrdersStep onOpen={(id) => void openOrder(id)} />}
         </div>
 
         <div className="widget-foot">

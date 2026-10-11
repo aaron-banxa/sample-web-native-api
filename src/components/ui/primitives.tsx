@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon, CopyIcon, InfoIcon, SealCheckIcon, WarningIcon, XCircleIcon } from "@/components/ui/icons";
-import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useState, useSyncExternalStore, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { cryptoMeta } from "@/config/onramp";
 
 export function Spinner({ dark, small }: { dark?: boolean; small?: boolean }) {
@@ -67,4 +67,14 @@ export function CoinIcon({ code }: { code: string }) {
       {meta.glyph}
     </span>
   );
+}
+
+const noSubscribe = () => () => {};
+/** False during server rendering and hydration, true afterwards. For output that depends on the browser (time zone, locale). */
+export const useIsClient = () => useSyncExternalStore(noSubscribe, () => true, () => false);
+
+/** A time in the viewer's time zone. Rendered after hydration, since the server doesn't know the viewer's zone. */
+export function LocalTime({ iso }: { iso?: string }) {
+  const client = useIsClient();
+  return <>{iso && client ? new Date(iso).toLocaleTimeString("en-AU", { hour12: false }) : ""}</>;
 }

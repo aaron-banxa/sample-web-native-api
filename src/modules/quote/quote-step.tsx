@@ -1,12 +1,12 @@
 "use client";
 
 import { AppleLogoIcon, ArrowDownIcon, BankIcon, CheckCircleIcon, ClockIcon, CreditCardIcon, GoogleLogoIcon, ListIcon, PencilSimpleIcon, WarningCircleIcon } from "@/components/ui/icons";
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { cryptoMeta, NETWORK_META, SUPPORTED_METHODS, type MethodId } from "@/config/onramp";
 import { api } from "@/lib/api";
 import { formatFiat } from "@/lib/format";
-import type { CustomerView, LimitsView, OrderDraft, QuoteView } from "@/lib/types";
-import { useCatalog } from "@/components/onramp/catalog-context";
+import type { CatalogCrypto, CustomerView, LimitsView, OrderDraft, QuoteView } from "@/lib/types";
+import { MockOnly, useCatalog, useRunMode } from "@/components/onramp/onramp-context";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { Button, CoinIcon } from "@/components/ui/primitives";
 import { draftIssues, findFiat, findNetwork, isValidWallet } from "@/modules/catalog/lookup";
@@ -24,7 +24,6 @@ const METHOD_ICON: Record<(typeof SUPPORTED_METHODS)[MethodId]["kind"], React.Re
 const sanitize = (v: string, decimals: number) => v.replace(/[^0-9.]/g, "").replace(new RegExp(`(\\.\\d{0,${decimals}}).*`), "$1");
 
 interface Props {
-  mock: boolean;
   draft: OrderDraft;
   onDraftChange: (draft: OrderDraft) => void;
   quote: QuoteView | null;
@@ -40,14 +39,15 @@ interface Props {
  * Options and limits come from Banxa's configuration endpoints (via the catalog), and the customer's
  * own limits (POST /eapi/v0/identities/transactions/limits) once we know who they are.
  */
-export function QuoteStep({ mock, draft, onDraftChange, quote, onQuote, customer, onForgetCustomer, onShowOrders, onContinue }: Props) {
+export function QuoteStep({ draft, onDraftChange, quote, onQuote, customer, onForgetCustomer, onShowOrders, onContinue }: Props) {
   const catalog = useCatalog();
+  const { mock } = useRunMode();
   const [loading, setLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [limits, setLimits] = useState<LimitsView | null>(null);
-  const [seconds, setSeconds] = useState(REFRESH_SECONDS);
   const [refreshTick, setRefreshTick] = useState(0);
-  const wallets = useWalletSupport(mock);
+  const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
+  const wallets = useWalletSupport();
 
   const fiat = findFiat(catalog, draft.fiat)!;
   const network = findNetwork(catalog, draft.crypto, draft.blockchain)!;
@@ -102,25 +102,13 @@ export function QuoteStep({ mock, draft, onDraftChange, quote, onQuote, customer
   }, [draft.fiat, amountKey, draft.crypto, draft.blockchain, draft.method, priceable, refreshTick, onQuote]);
 
   // Customer limits for this currency, method and asset.
+  const customerId = customer?.id;
   useEffect(() => {
-    if (!customer) return setLimits(null);
+    if (!customerId) return setLimits(null);
     const controller = new AbortController();
     api.limits(draft, controller.signal).then(setLimits, () => setLimits(null));
     return () => controller.abort();
-  }, [customer, draft.fiat, draft.method, draft.crypto, draft.blockchain]);
-
-  useEffect(() => {
-    let remaining = REFRESH_SECONDS;
-    const id = setInterval(() => {
-      remaining -= 1;
-      if (remaining <= 0) {
-        remaining = REFRESH_SECONDS;
-        setRefreshTick((t) => t + 1);
-      }
-      setSeconds(remaining);
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
+  }, [customerId, draft.fiat, draft.method, draft.crypto, draft.blockchain]);
 
   const changeFiat = (code: string) => {
     const next = findFiat(catalog, code)!;
@@ -206,13 +194,7 @@ export function QuoteStep({ mock, draft, onDraftChange, quote, onQuote, customer
               <CoinIcon code={draft.crypto} />
               {draft.crypto} <small>{draft.blockchain}</small>
               <select aria-label="Asset and network" value={`${draft.crypto}:${draft.blockchain}`} onChange={(e) => changeAsset(e.target.value)}>
-                {catalog.cryptos.map((c) => (
-                  <optgroup key={c.code} label={c.name}>
-                    {c.networks.map((n) => (
-                      <option key={`${c.code}:${n.id}`} value={`${c.code}:${n.id}`}>{c.code} · {n.name}</option>
-                    ))}
-                  </optgroup>
-                ))}
+                <AssetOptions cryptos={catalog.cryptos} />
               </select>
             </span>
           </div>
@@ -246,11 +228,13 @@ export function QuoteStep({ mock, draft, onDraftChange, quote, onQuote, customer
             {walletValid ? `Valid ${network.name} address` : `Not a valid ${network.name} address`}
           </p>
         ) : (
-          mock && NETWORK_META[network.id]?.testWallet && (
-            <p className="hint">
-              Mock mode:{" "}
-              <button type="button" className="link" onClick={() => set({ walletAddress: NETWORK_META[network.id]!.testWallet! })}>use a test wallet</button>
-            </p>
+          NETWORK_META[network.id]?.testWallet && (
+            <MockOnly>
+              <p className="hint">
+                Mock mode:{" "}
+                <button type="button" className="link" onClick={() => set({ walletAddress: NETWORK_META[network.id]!.testWallet! })}>use a test wallet</button>
+              </p>
+            </MockOnly>
           )
         )}
       </div>
@@ -295,7 +279,7 @@ export function QuoteStep({ mock, draft, onDraftChange, quote, onQuote, customer
         Continue
       </Button>
       <p className="hint blur-in" style={{ "--i": 7, justifyContent: "center", marginTop: 10 } as React.CSSProperties}>
-        <ClockIcon size={13} /> Indicative price · refreshes in <span className="mono">{seconds}</span>s
+        <ClockIcon size={13} /> Indicative price · refreshes in <RefreshCountdown seconds={REFRESH_SECONDS} onElapsed={refresh} />s
       </p>
       {customer && (
         <p className="hint" style={{ justifyContent: "center", marginTop: 6, flexWrap: "wrap" }}>
@@ -309,3 +293,32 @@ export function QuoteStep({ mock, draft, onDraftChange, quote, onQuote, customer
     </>
   );
 }
+
+/** Counts down to the next price refresh. Its own component, so the ticking doesn't re-render the whole step. */
+function RefreshCountdown({ seconds, onElapsed }: { seconds: number; onElapsed: () => void }) {
+  const [left, setLeft] = useState(seconds);
+  useEffect(() => {
+    let remaining = seconds;
+    const id = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        remaining = seconds;
+        onElapsed();
+      }
+      setLeft(remaining);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [seconds, onElapsed]);
+  return <span className="mono">{left}</span>;
+}
+
+/** Every asset and network Banxa offers (300+ options). Memoised: the list only changes with the catalog. */
+const AssetOptions = memo(function AssetOptions({ cryptos }: { cryptos: CatalogCrypto[] }) {
+  return cryptos.map((c) => (
+    <optgroup key={c.code} label={c.name}>
+      {c.networks.map((n) => (
+        <option key={`${c.code}:${n.id}`} value={`${c.code}:${n.id}`}>{c.code} · {n.name}</option>
+      ))}
+    </optgroup>
+  ));
+});

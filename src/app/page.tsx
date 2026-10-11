@@ -1,13 +1,19 @@
-import { CatalogProvider } from "@/components/onramp/catalog-context";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { OnrampProvider } from "@/components/onramp/onramp-context";
+import { PAID_COOKIE, parsePaid, resumeStepFor } from "@/components/onramp/paid-orders";
 import { OnrampWidget } from "@/components/onramp/widget";
 import { env } from "@/lib/env";
+import { currentCustomer } from "@/lib/session";
 import type { Catalog } from "@/lib/types";
 import { getCatalog } from "@/modules/catalog/server";
+import { toCustomerView } from "@/modules/identity/server";
+import { findOrder, toOrderView } from "@/modules/order/orders";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ order?: string }> }) {
-  const { order } = await searchParams;
+  const { order: orderId } = await searchParams;
   const mode = env.BANXA_MODE;
 
   // Supported fiats, cryptos, payment methods and countries, from the Banxa Native API.
@@ -18,6 +24,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ o
     console.error("[catalog] could not load Banxa configuration", err);
   }
   const usable = catalog && catalog.fiats.length > 0 && catalog.cryptos.length > 0;
+
+  // Rendered here rather than fetched after load: the remembered customer, and the order being
+  // restored (a refresh, or returning from Banxa hosted checkout via redirectUrl).
+  const customer = await currentCustomer();
+  const order = orderId && customer ? findOrder(orderId) : null;
+  if (orderId && (!order || order.customerId !== customer?.id)) redirect("/");
+  const initialOrder = order ? toOrderView(order) : null;
+  const paid = parsePaid((await cookies()).get(PAID_COOKIE)?.value);
 
   return (
     <>
@@ -40,9 +54,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ o
       </header>
       <main className="stage">
         {usable ? (
-          <CatalogProvider catalog={catalog!}>
-            <OnrampWidget mode={mode} initialOrderId={order} merchantDomain={env.NEXT_PUBLIC_MERCHANT_DOMAIN} />
-          </CatalogProvider>
+          <OnrampProvider catalog={catalog!} mode={mode} merchantDomain={env.NEXT_PUBLIC_MERCHANT_DOMAIN}>
+            <OnrampWidget
+              initialCustomer={customer ? toCustomerView(customer) : null}
+              initialOrder={initialOrder}
+              initialStep={initialOrder ? resumeStepFor(initialOrder, paid) : "quote"}
+            />
+          </OnrampProvider>
         ) : (
           <div className="widget">
             <div className="widget-body center">

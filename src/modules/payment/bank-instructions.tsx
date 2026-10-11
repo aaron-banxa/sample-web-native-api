@@ -1,12 +1,12 @@
 "use client";
 
-import { FlaskIcon } from "@/components/ui/icons";
-import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import dynamic from "next/dynamic";
+import { MockOnly } from "@/components/onramp/onramp-context";
 import { formatFiat } from "@/lib/format";
 import type { OrderView } from "@/lib/types";
-import { Button, Callout, CopyButton, Spinner } from "@/components/ui/primitives";
-import { useOrderStream } from "@/modules/fulfilment/use-order-stream";
+import { Callout, CopyButton, Spinner } from "@/components/ui/primitives";
+
+const SimulateTransfer = dynamic(() => import("./mock-checkout").then((m) => m.SimulateTransfer));
 
 /**
  * Labels for deposit instruction fields across bank-transfer methods
@@ -36,23 +36,14 @@ const HIDDEN = new Set(["currency", "amount"]);
 
 const labelFor = (key: string) => LABELS[key] ?? key.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, (c) => c.toUpperCase());
 
-interface Props {
-  order: OrderView;
-  mock: boolean;
-  onReceived: () => void;
-}
-
-/** Bank transfer: show the deposit instructions Banxa returned and wait for the payment webhook (→ SSE). */
-export function BankInstructions({ order: initial, mock, onReceived }: Props) {
-  const order = useOrderStream(initial);
-  const [simulating, setSimulating] = useState(false);
+/**
+ * Bank transfer: show the deposit instructions Banxa returned. The widget follows the order live and
+ * moves to delivery when Banxa's payment webhook arrives.
+ */
+export function BankInstructions({ order }: { order: OrderView }) {
   const instructions = order.payment.mode === "bank" ? order.payment.instructions : {};
   const fields = Object.entries(instructions).filter(([k]) => !HIDDEN.has(k));
   const mustMatch = fields.filter(([k]) => MUST_MATCH.has(k)).map(([k]) => labelFor(k).toLowerCase());
-
-  useEffect(() => {
-    if (order.status !== "AWAITING_PAYMENT") onReceived();
-  }, [order.status, onReceived]);
 
   return (
     <>
@@ -85,19 +76,9 @@ export function BankInstructions({ order: initial, mock, onReceived }: Props) {
         </div>
       </div>
 
-      {mock && (
-        <Button
-          block
-          busy={simulating}
-          busyLabel="Waiting for Banxa"
-          onClick={() => {
-            setSimulating(true);
-            api.mockPay(order.id).catch(() => setSimulating(false));
-          }}
-        >
-          <FlaskIcon size={16} weight="bold" /> Simulate bank transfer
-        </Button>
-      )}
+      <MockOnly>
+        <SimulateTransfer orderId={order.id} />
+      </MockOnly>
     </>
   );
 }

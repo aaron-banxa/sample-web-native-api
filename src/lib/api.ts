@@ -2,6 +2,9 @@
 
 import type { CustomerView, EligibilityView, LimitsView, LockedQuoteView, OrderDraft, OrderSummary, OrderView, QuoteView } from "@/lib/types";
 
+/** A request cancelled by its AbortController (the component unmounted or its inputs changed). */
+export const isAbort = (err: unknown) => err instanceof Error && err.name === "AbortError";
+
 export class ApiRequestError extends Error {
   constructor(
     message: string,
@@ -51,7 +54,7 @@ export type KycStatus = "PENDING" | "UNDER_REVIEW" | "ACTION_REQUIRED" | "VERIFI
 export const api = {
   quote: ({ fiat, amountType, fiatAmount, cryptoAmount, crypto, blockchain, method }: OrderDraft, signal?: AbortSignal) =>
     request<QuoteView>(`/api/quote?${new URLSearchParams({ fiat, amountType, fiatAmount, cryptoAmount, crypto, blockchain, method })}`, { signal }),
-  lockQuote: (draft: OrderDraft) => request<LockedQuoteView>("/api/quote/lock", { method: "POST", body: { draft } }),
+  lockQuote: (draft: OrderDraft, signal?: AbortSignal) => request<LockedQuoteView>("/api/quote/lock", { method: "POST", body: { draft }, signal }),
   limits: ({ fiat, method, crypto, blockchain }: OrderDraft, signal?: AbortSignal) =>
     request<LimitsView>(`/api/limits?${new URLSearchParams({ fiat, method, crypto, blockchain })}`, { signal }),
   shareKyc: () => request<{ kycStatus: KycStatus }>("/api/identity/kyc-share", { method: "POST", body: {} }),
@@ -61,7 +64,7 @@ export const api = {
   register: (form: IdentityForm) => request<CustomerView>("/api/identity", { method: "POST", body: form }),
   forget: () => request<null>("/api/identity", { method: "DELETE" }),
   verifyEmail: (email: string, code: string) => request<CustomerView>("/api/identity/verify", { method: "POST", body: { email, code } }),
-  eligibility: (draft: OrderDraft) => request<EligibilityView>("/api/eligibility", { method: "POST", body: { draft } }),
+  eligibility: (draft: OrderDraft, signal?: AbortSignal) => request<EligibilityView>("/api/eligibility", { method: "POST", body: { draft }, signal }),
   dueDiligence: (answers: DueDiligenceAnswers, draft: OrderDraft) =>
     request<EligibilityView>("/api/due-diligence", { method: "POST", body: { answers, draft } }),
   createOrder: (draft: OrderDraft, idempotencyKey: string, quoteId?: string) =>

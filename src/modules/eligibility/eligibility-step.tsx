@@ -1,11 +1,11 @@
 "use client";
 
 import { CheckIcon, ExclamationMarkIcon } from "@/components/ui/icons";
-import { useEffect, useRef, useState } from "react";
-import { api } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, isAbort } from "@/lib/api";
 import { formatFiat } from "@/lib/format";
 import type { CustomerView, EligibilityView, OrderDraft } from "@/lib/types";
-import { useCatalog } from "@/components/onramp/catalog-context";
+import { useCatalog } from "@/components/onramp/onramp-context";
 import { Button, Callout, Spinner } from "@/components/ui/primitives";
 import { findMethod, findNetwork } from "@/modules/catalog/lookup";
 import { VerificationOptions } from "./verification-options";
@@ -25,14 +25,19 @@ export function EligibilityStep({ draft, customer, onContinue }: Props) {
   const [result, setResult] = useState<EligibilityView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const started = useRef(-1);
 
   useEffect(() => {
-    if (started.current === attempt) return; // React StrictMode runs effects twice in development
-    started.current = attempt;
-    setError(null);
-    api.eligibility(draft).then(setResult, (err: Error) => setError(err.message));
+    const controller = new AbortController();
+    api.eligibility(draft, controller.signal).then(setResult, (err: Error) => {
+      if (!isAbort(err)) setError(err.message);
+    });
+    return () => controller.abort();
   }, [attempt, draft]);
+
+  const retry = () => {
+    setError(null);
+    setAttempt((a) => a + 1);
+  };
 
   const rows: [string, string][] = [
     ["Identity on file", customer.email],
@@ -68,7 +73,7 @@ export function EligibilityStep({ draft, customer, onContinue }: Props) {
       {error && (
         <>
           <Callout tone="red">{error}</Callout>
-          <Button block onClick={() => setAttempt((a) => a + 1)}>Try again</Button>
+          <Button block onClick={retry}>Try again</Button>
         </>
       )}
 

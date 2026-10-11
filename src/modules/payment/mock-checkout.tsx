@@ -1,12 +1,14 @@
 "use client";
 
-import { AppleLogoIcon, CheckCircleIcon, CreditCardIcon, IdentificationCardIcon, ScanSmileyIcon } from "@/components/ui/icons";
+import { AppleLogoIcon, CheckCircleIcon, CreditCardIcon, FlaskIcon, IdentificationCardIcon, ScanSmileyIcon } from "@/components/ui/icons";
 import { useState } from "react";
 import { SUPPORTED_METHODS, type MethodId } from "@/config/onramp";
+import { api } from "@/lib/api";
 import { Button, Callout } from "@/components/ui/primitives";
 
 /**
- * Mock-mode stand-ins for `<banxa-primer-checkout>` and `<banxa-hosted-checkout>`.
+ * Mock-mode stand-ins for `<banxa-primer-checkout>`, `<banxa-hosted-checkout>` and a bank transfer.
+ * Loaded on demand, so they never ship to sandbox or production visitors.
  * They look and behave like the real sheets but call /api/mock/payment instead of charging anyone.
  *
  * Test card that is declined: 4000 0000 0000 0002
@@ -160,6 +162,24 @@ export function MockHostedCheckout({ amount, onPay }: { amount: string; onPay: (
         Verify ID and pay {amount}
       </Button>
     </div>
+  );
+}
+
+/** Pretend the customer sent the bank transfer: the mock sends the same webhooks Banxa would. */
+export function SimulateTransfer({ orderId }: { orderId: string }) {
+  const [simulating, setSimulating] = useState(false);
+  return (
+    <Button
+      block
+      busy={simulating}
+      busyLabel="Waiting for Banxa"
+      onClick={() => {
+        setSimulating(true);
+        api.mockPay(orderId).catch(() => setSimulating(false));
+      }}
+    >
+      <FlaskIcon size={16} weight="bold" /> Simulate bank transfer
+    </Button>
   );
 }
 

@@ -2,13 +2,14 @@
 
 import { ShieldCheckIcon } from "@/components/ui/icons";
 import { useEffect, useRef, useState } from "react";
+import { useRunMode } from "@/components/onramp/onramp-context";
 import { Callout, Spinner } from "@/components/ui/primitives";
+import { loadPaymentSdk } from "./payment-sdk";
 
 interface Props {
   nativeToken: string;
   /** Primer method type, e.g. PAYMENT_CARD, APPLE_PAY, GOOGLE_PAY. */
   primerMethod: string;
-  merchantDomain?: string;
   onAuthorised: () => void;
 }
 
@@ -19,14 +20,14 @@ interface Props {
  * `banxa:payment-success` means the payment was authorised. The order is only complete
  * once Banxa says so via webhook, which the delivery step listens for.
  */
-export function NativeCheckout({ nativeToken, primerMethod, merchantDomain, onAuthorised }: Props) {
+export function NativeCheckout({ nativeToken, primerMethod, onAuthorised }: Props) {
+  const { merchantDomain } = useRunMode();
   const ref = useRef<HTMLElement>(null);
   const [registered, setRegistered] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // The SDK touches `window`, so load it in the browser only.
   useEffect(() => {
-    import("@banxa-official/javascript-native-payments-sdk/web")
+    loadPaymentSdk()
       .then(({ registerBanxaPrimerCheckout }) => {
         registerBanxaPrimerCheckout();
         setRegistered(true);

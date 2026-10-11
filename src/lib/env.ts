@@ -23,12 +23,21 @@ const schema = z
     /** Signs session cookies. Required outside mock mode. */
     SESSION_SECRET: z.string().min(32).optional(),
     /** Shared secret for POST /api/sync (scheduled reconciliation). */
-    SYNC_SECRET: z.string().optional(),
+    SYNC_SECRET: z.string().min(32).optional(),
+    /** Mock mode is for development. Set to true to run it from a production build anyway (e.g. a demo). */
+    ALLOW_MOCK: z.stringbool().default(false),
     MOCK_EDD_THRESHOLD: z.coerce.number().default(200),
     MOCK_VERIFICATION_THRESHOLD: z.coerce.number().default(5000),
   })
   .superRefine((env, ctx) => {
-    if (env.BANXA_MODE === "mock") return;
+    if (env.BANXA_MODE === "mock") {
+      // A production deploy that forgot BANXA_MODE would otherwise run with the mock's public secrets.
+      const runningProduction = process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build";
+      if (runningProduction && !env.ALLOW_MOCK) {
+        ctx.addIssue({ code: "custom", path: ["BANXA_MODE"], message: "Mock mode is for development. Set BANXA_MODE=sandbox or production (or ALLOW_MOCK=true for a demo)." });
+      }
+      return;
+    }
     for (const key of ["BANXA_PARTNER", "BANXA_API_KEY", "BANXA_NATIVE_KEY", "BANXA_NATIVE_SECRET", "SESSION_SECRET"] as const) {
       if (!env[key]) ctx.addIssue({ code: "custom", path: [key], message: `${key} is required when BANXA_MODE=${env.BANXA_MODE}` });
     }

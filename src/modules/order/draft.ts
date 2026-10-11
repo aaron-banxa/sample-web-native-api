@@ -17,7 +17,7 @@ export const orderDraftSchema = z.object({
   cryptoAmount: decimal.default(""),
   crypto: z.string().min(1),
   blockchain: z.string().min(1),
-  walletAddress: z.string().trim(),
+  walletAddress: z.string().trim().max(128),
   method: z.string().min(1),
 });
 

@@ -1,6 +1,6 @@
 import { after, NextResponse } from "next/server";
 import { z } from "zod";
-import { route } from "@/lib/http";
+import { readJson, route } from "@/lib/http";
 import { requireCustomer } from "@/lib/session";
 import { parseDraft } from "@/modules/order/draft";
 import { listCustomerOrders, toOrderView } from "@/modules/order/orders";
@@ -30,7 +30,7 @@ const bodySchema = z.object({
 /** POST /api/orders { draft, idempotencyKey, quoteId? } → order with its payment session */
 export const POST = route(async (req) => {
   const customer = await requireCustomer();
-  const body = bodySchema.parse(await req.json());
+  const body = bodySchema.parse(await readJson(req));
   const order = await createOrder(customer, await parseDraft(body.draft), body.idempotencyKey, body.quoteId);
   return NextResponse.json(toOrderView(order), { status: 201 });
 });

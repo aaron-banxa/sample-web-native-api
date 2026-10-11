@@ -15,8 +15,13 @@ import { findCustomerById, markCustomerBlocked } from "@/modules/identity/custom
  * Unknown orders get a 404 so Banxa retries once the order is saved.
  * Docs: https://docs.banxa.com/products/native-api/docs/transaction-lifecycle/webhooks
  */
+/** Banxa webhooks are a few hundred bytes. Refuse anything large before reading or verifying it. */
+const MAX_BODY_BYTES = 64 * 1024;
+
 export async function POST(req: Request) {
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return new Response("too large", { status: 413 });
   const raw = await req.text();
+  if (raw.length > MAX_BODY_BYTES) return new Response("too large", { status: 413 });
 
   if (!verifyWebhookSignature(req.headers.get("authorization"), raw, env.BANXA_WEBHOOK_PATH, env.webhookSecret)) {
     return new Response("invalid signature", { status: 401 });
@@ -40,7 +45,7 @@ export async function POST(req: Request) {
       }
     } else {
       // Unknown message type (e.g. KYC updates not enabled here). Acknowledge so Banxa doesn't retry.
-      console.warn("[webhook] unhandled payload", raw.slice(0, 500));
+      console.warn("[webhook] unhandled payload with fields", Object.keys(event).join(", "));
     }
   } catch (err) {
     console.error("[webhook] failed to apply", err);

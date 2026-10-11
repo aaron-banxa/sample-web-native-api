@@ -37,11 +37,19 @@ export function alreadyProcessed(key: string): boolean {
   return !!db().prepare("SELECT 1 FROM webhook_events WHERE dedupe_key = ?").get(key);
 }
 
+/** Webhook payloads hold customer and wallet details: keep them only as long as retries and debugging need. */
+const KEEP_WEBHOOKS_DAYS = 30;
+let prunedAt = 0;
+
 /** Record only after the event is applied, so a failed apply is retried by Banxa. */
 export function markProcessed(key: string, subject: string, status: string, rawBody: string) {
   db()
     .prepare("INSERT OR IGNORE INTO webhook_events (dedupe_key, subject, status, payload, received_at) VALUES (?, ?, ?, ?, ?)")
     .run(key, subject, status, rawBody, now());
+  if (Date.now() - prunedAt > 3_600_000) {
+    prunedAt = Date.now();
+    db().prepare("DELETE FROM webhook_events WHERE received_at < ?").run(new Date(Date.now() - KEEP_WEBHOOKS_DAYS * 86_400_000).toISOString());
+  }
 }
 
 /** Apply a Banxa status to our order: map it, ignore out-of-order updates, save, push to the browser. */

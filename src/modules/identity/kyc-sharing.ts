@@ -37,7 +37,7 @@ async function createSumsubShareToken(customer: Customer): Promise<string> {
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {
-    console.error("[sumsub] share token failed", res.status, await res.text());
+    console.error("[sumsub] share token failed", res.status, (await res.text()).slice(0, 200));
     throw new HttpError(502, "We couldn't reuse your existing verification. Verify with Banxa instead.");
   }
   const { token } = (await res.json()) as { token: string };

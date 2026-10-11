@@ -105,14 +105,25 @@ function saveOrder(order: Parameters<typeof insertOrder>[0]): Order {
     return insertOrder(order);
   } catch (err) {
     const existing = findOrder(order.id);
-    if (existing) return existing;
+    if (existing?.customerId === order.customerId) return existing;
+    if (existing) throw new HttpError(409, "Please refresh and try again.");
     throw err;
   }
 }
 
+/** The browser is sent to checkoutUrl with a full-page redirect, so only ever send it to Banxa. */
+const isBanxaCheckout = (url: string) => {
+  try {
+    const { protocol, hostname } = new URL(url);
+    return protocol === "https:" && /(^|\.)banxa(-sandbox)?\.com$/.test(hostname);
+  } catch {
+    return false;
+  }
+};
+
 function paymentSessionFor(paymentReady: boolean, nativeToken?: string, checkoutUrl?: string): PaymentSession {
   if (isMock) return paymentReady ? { mode: "mock-native" } : { mode: "mock-hosted" };
   if (paymentReady && nativeToken) return { mode: "native", nativeToken };
-  if (checkoutUrl) return { mode: "hosted", checkoutUrl };
-  throw new Error("Banxa returned neither a nativeToken nor a checkoutUrl");
+  if (checkoutUrl && isBanxaCheckout(checkoutUrl)) return { mode: "hosted", checkoutUrl };
+  throw new Error(checkoutUrl ? `Unexpected checkoutUrl host: ${new URL(checkoutUrl).hostname}` : "Banxa returned neither a nativeToken nor a checkoutUrl");
 }

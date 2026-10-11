@@ -4,8 +4,29 @@
     {
       "name": "onramp",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["NODE_EXTRA_CA_CERTS=/private/tmp/claude-501/-Users-aaronlee-Documents-Github-sample-web-native-api/32b577b0-2a0e-4f84-a3cc-e16a2f05e1ff/scratchpad/cloudflare-gateway-ca.pem", "npm", "run", "dev"],
+      "runtimeArgs": [
+        "NODE_EXTRA_CA_CERTS=/private/tmp/claude-501/-Users-aaronlee-Documents-Github-sample-web-native-api/32b577b0-2a0e-4f84-a3cc-e16a2f05e1ff/scratchpad/cloudflare-gateway-ca.pem",
+        "npm",
+        "run",
+        "dev"
+      ],
       "port": 3000
+    },
+    {
+      "name": "onramp-mock",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "BANXA_MODE=mock",
+        "APP_URL=http://localhost:3005",
+        "DATABASE_PATH=data/onramp.mock.db",
+        "npm",
+        "run",
+        "dev",
+        "--",
+        "-p",
+        "3005"
+      ],
+      "port": 3005
     }
   ]
 }

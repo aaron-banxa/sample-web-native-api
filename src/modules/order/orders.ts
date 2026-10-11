@@ -28,7 +28,7 @@ interface Row {
   updated_at: string;
 }
 
-const toOrder = (r: Row): Order => ({
+const toOrder = (r: Row, statusTimes: OrderView["statusTimes"] = {}): Order => ({
   id: r.id,
   customerId: r.customer_id,
   banxaOrderId: r.banxa_order_id,
@@ -45,12 +45,22 @@ const toOrder = (r: Row): Order => ({
   payment: JSON.parse(r.payment) as PaymentSession,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  statusTimes,
 });
+
+/** Record the first time an order reached a status (shown on the delivery timeline). */
+const recordStatus = (orderId: string, status: AppStatus, at: string) =>
+  db().prepare("INSERT OR IGNORE INTO order_events (order_id, status, at) VALUES (?, ?, ?)").run(orderId, status, at);
+
+function withStatusTimes(row: Row): Order {
+  const events = db().prepare("SELECT status, at FROM order_events WHERE order_id = ?").all(row.id) as unknown as { status: AppStatus; at: string }[];
+  return toOrder(row, Object.fromEntries(events.map((e) => [e.status, e.at])));
+}
 
 /** The browser-safe view of an order. */
 export const toOrderView = ({ customerId: _c, banxaOrderId: _b, ...view }: Order): OrderView => view;
 
-export function insertOrder(o: Omit<Order, "createdAt" | "updatedAt" | "txHash">): Order {
+export function insertOrder(o: Omit<Order, "createdAt" | "updatedAt" | "txHash" | "statusTimes">): Order {
   const ts = now();
   db()
     .prepare(
@@ -58,29 +68,32 @@ export function insertOrder(o: Omit<Order, "createdAt" | "updatedAt" | "txHash">
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(o.id, o.customerId, o.banxaOrderId, o.rail, o.method, o.status, o.fiat, o.fiatAmount, o.crypto, o.blockchain, o.cryptoAmount, o.walletAddress, JSON.stringify(o.payment), ts, ts);
-  return { ...o, txHash: null, createdAt: ts, updatedAt: ts };
+  recordStatus(o.id, o.status, ts);
+  return { ...o, txHash: null, createdAt: ts, updatedAt: ts, statusTimes: { [o.status]: ts } };
 }
 
 export function findOrder(id: string): Order | null {
   const row = db().prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row | undefined;
-  return row ? toOrder(row) : null;
+  return row ? withStatusTimes(row) : null;
 }
 
 export function findOrderByBanxaId(banxaOrderId: string): Order | null {
   const row = db().prepare("SELECT * FROM orders WHERE banxa_order_id = ?").get(banxaOrderId) as Row | undefined;
-  return row ? toOrder(row) : null;
+  return row ? withStatusTimes(row) : null;
 }
 
 export function updateOrder(id: string, patch: { status: AppStatus; cryptoAmount?: string | null; txHash?: string | null }): Order {
+  const ts = now();
   db()
     .prepare("UPDATE orders SET status = ?, crypto_amount = COALESCE(?, crypto_amount), tx_hash = COALESCE(?, tx_hash), updated_at = ? WHERE id = ?")
-    .run(patch.status, patch.cryptoAmount ?? null, patch.txHash ?? null, now(), id);
+    .run(patch.status, patch.cryptoAmount ?? null, patch.txHash ?? null, ts, id);
+  recordStatus(id, patch.status, ts);
   return findOrder(id)!;
 }
 
 export function listCustomerOrders(customerId: string, limit = 20): OrderSummary[] {
   const rows = db().prepare("SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT ?").all(customerId, limit) as unknown as Row[];
-  return rows.map(toOrder).map((o) => ({
+  return rows.map((r) => toOrder(r)).map((o) => ({
     id: o.id,
     status: o.status,
     method: o.method,
@@ -101,5 +114,5 @@ export function listOpenOrders(days: number, customerId?: string): Order[] {
       ? db().prepare(`SELECT * FROM orders WHERE customer_id = ? AND created_at >= ? AND status NOT IN ${terminal}`).all(customerId, since)
       : db().prepare(`SELECT * FROM orders WHERE created_at >= ? AND status NOT IN ${terminal}`).all(since)
   ) as unknown as Row[];
-  return rows.map(toOrder);
+  return rows.map((r) => toOrder(r));
 }

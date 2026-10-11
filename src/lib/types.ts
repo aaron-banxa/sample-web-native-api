@@ -135,6 +135,8 @@ export interface OrderView {
   payment: PaymentSession;
   createdAt: string;
   updatedAt: string;
+  /** When this app first saw each status (ISO 8601). */
+  statusTimes: Partial<Record<AppStatus, string>>;
 }
 
 export interface ApiError {

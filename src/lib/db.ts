@@ -41,6 +41,15 @@ CREATE TABLE IF NOT EXISTS orders (
   updated_at     TEXT NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS orders_by_customer ON orders (customer_id, created_at);
+
+CREATE TABLE IF NOT EXISTS order_events (
+  order_id       TEXT NOT NULL REFERENCES orders(id),
+  status         TEXT NOT NULL,             -- AppStatus
+  at             TEXT NOT NULL,             -- when this app first saw it
+  PRIMARY KEY (order_id, status)
+);
+
 CREATE TABLE IF NOT EXISTS locked_quotes (
   quote_id       TEXT PRIMARY KEY,          -- Banxa quoteId (GET /eapi/v0/quote)
   customer_id    TEXT NOT NULL REFERENCES customers(id),
